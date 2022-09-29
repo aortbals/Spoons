@@ -27,10 +27,12 @@ obj.author = "Roman Khomenko <roman.dowakin@gmail.com>"
 obj.homepage = "https://github.com/Hammerspoon/Spoons"
 obj.license = "MIT - https://opensource.org/licenses/MIT"
 
-obj.defaultState = 'unmute'
+obj.defaultState = 'push-to-talk'
 
 obj.state = obj.defaultState
 obj.pushed = false
+obj.hotkey = 'fn'
+obj.inputDeviceName = nil
 
 --- PushToTalk.app_switcher
 --- Variable
@@ -49,7 +51,13 @@ obj.app_switcher = {}
 obj.detect_on_start = false
 
 local function showState()
-    local device = hs.audiodevice.defaultInputDevice()
+    local device
+    if obj.inputDeviceName then
+        device = hs.audiodevice.findInputByName(obj.inputDeviceName)
+    else
+        device = obj.inputDeviceName or hs.audiodevice.defaultInputDevice()
+    end
+
     local muted = false
     if obj.state == 'unmute' then
         obj.menubar:setIcon(hs.spoons.resourcePath("speak.pdf"))
@@ -80,13 +88,6 @@ function obj.setState(s)
     showState()
 end
 
-obj.menutable = {
-    { title = "UnMuted", fn = function() obj.setState('unmute') end },
-    { title = "Muted", fn = function() obj.setState('mute') end },
-    { title = "Push-to-talk (fn)", fn = function() obj.setState('push-to-talk') end },
-    { title = "Release-to-talk (fn)", fn = function() obj.setState('release-to-talk') end },
-}
-
 local function appWatcher(appName, eventType, appObject)
     local new_app_state = obj.app_switcher[appName];
     if (new_app_state) then
@@ -98,13 +99,38 @@ local function appWatcher(appName, eventType, appObject)
     end
 end
 
+local function dump(o)
+    if type(o) == 'table' then
+       local s = '{ '
+       for k,v in pairs(o) do
+          if type(k) ~= 'number' then k = '"'..k..'"' end
+          s = s .. '['..k..'] = ' .. dump(v) .. ','
+       end
+       return s .. '} '
+    else
+       return tostring(o)
+    end
+  end
+
 local function eventTapWatcher(event)
     device = hs.audiodevice.defaultInputDevice()
-    if event:getFlags()['fn'] then
+    if event:getKeyCode() == obj.hotkey then
         obj.pushed = true
     else
         obj.pushed = false
     end
+    showState()
+end
+
+local function pressedFn()
+    -- print('pushed')
+    obj.pushed = true
+    showState()
+end
+
+local function releasedFn()
+    -- print('released')
+    obj.pushed = false
     showState()
 end
 
@@ -128,7 +154,14 @@ end
 ---
 --- Parameters:
 ---  * None
-function obj:init()
+function obj:init(config)
+    if config and config['hotkey'] then
+        obj.hotkey = config['hotkey']
+    end
+
+    if config and config['inputDeviceName'] then
+        obj.inputDeviceName = config['inputDeviceName']
+    end
 end
 
 --- PushToTalk:init()
@@ -142,8 +175,14 @@ function obj:start()
     obj.appWatcher = hs.application.watcher.new(appWatcher)
     obj.appWatcher:start()
 
-    obj.eventTapWatcher = hs.eventtap.new({hs.eventtap.event.types.flagsChanged}, eventTapWatcher)
-    obj.eventTapWatcher:start()
+    hs.hotkey.bind(nil, obj.hotkey, pressedFn, releasedFn)
+
+    obj.menutable = {
+        { title = "Unmuted", fn = function() obj.setState('unmute') end },
+        { title = "Muted", fn = function() obj.setState('mute') end },
+        { title = "Push-to-talk (" .. obj.hotkey .. ")", fn = function() obj.setState('push-to-talk') end },
+        { title = "Push-to-silence (" .. obj.hotkey .. ")", fn = function() obj.setState('release-to-talk') end },
+    }
 
     obj.menubar = hs.menubar.new()
     obj.menubar:setMenu(obj.menutable)
@@ -161,6 +200,26 @@ function obj:stop()
     if obj.appWatcher then obj.appWatcher:stop() end
     if obj.eventTapWatcher then obj.eventTapWatcher:stop() end
     if obj.menubar then obj.menubar:delete() end
+end
+
+--- PushToTalk:pushToTalk()
+--- Method
+--- Sets mode to push-to-talk
+---
+--- Parameters:
+---  * None
+function obj:pushToTalk()
+    obj.setState('push-to-talk')
+end
+
+--- PushToTalk:pushToSilence()
+--- Method
+--- Sets mode to push-to-silence
+---
+--- Parameters:
+---  * None
+function obj:pushToSilence()
+    obj.setState('release-to-talk')
 end
 
 --- PushToTalk:toggleStates()

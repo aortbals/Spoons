@@ -99,22 +99,9 @@ local function appWatcher(appName, eventType, appObject)
     end
 end
 
-local function dump(o)
-    if type(o) == 'table' then
-       local s = '{ '
-       for k,v in pairs(o) do
-          if type(k) ~= 'number' then k = '"'..k..'"' end
-          s = s .. '['..k..'] = ' .. dump(v) .. ','
-       end
-       return s .. '} '
-    else
-       return tostring(o)
-    end
-  end
-
 local function eventTapWatcher(event)
     device = hs.audiodevice.defaultInputDevice()
-    if event:getKeyCode() == obj.hotkey then
+    if event:getFlags()[obj.hotkey] then
         obj.pushed = true
     else
         obj.pushed = false
@@ -123,13 +110,11 @@ local function eventTapWatcher(event)
 end
 
 local function pressedFn()
-    -- print('pushed')
     obj.pushed = true
     showState()
 end
 
 local function releasedFn()
-    -- print('released')
     obj.pushed = false
     showState()
 end
@@ -175,7 +160,14 @@ function obj:start()
     obj.appWatcher = hs.application.watcher.new(appWatcher)
     obj.appWatcher:start()
 
-    hs.hotkey.bind(nil, obj.hotkey, pressedFn, releasedFn)
+    if (obj.hotkey == 'fn') then
+        -- Standalone fn keybinding must be done via eventtap.event
+        -- https://github.com/Hammerspoon/hammerspoon/issues/1451
+        obj.eventTapWatcher = hs.eventtap.new({hs.eventtap.event.types.flagsChanged}, eventTapWatcher)
+        obj.eventTapWatcher:start()
+    else
+        hs.hotkey.bind(nil, obj.hotkey, pressedFn, releasedFn)
+    end
 
     obj.menutable = {
         { title = "Unmuted", fn = function() obj.setState('unmute') end },
